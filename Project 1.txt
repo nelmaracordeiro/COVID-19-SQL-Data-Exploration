@@ -1,0 +1,285 @@
+---COVID-19 Data Exploration---
+
+SELECT
+*
+FROM
+dbo.covid_data_deaths$
+WHERE 
+continent IS NOT NULL
+ORDER BY
+location,date
+
+
+---Selecting the data to work with---
+
+SELECT 
+location,date,total_cases,new_cases,CAST(total_deaths as bigint) as Total_deaths,population
+FROM
+dbo.covid_data_deaths$
+WHERE
+continent IS NOT NULL
+and location not in ('World', 'European Union', 'International')
+ORDER BY
+location,date
+
+
+---Total Cases vs Total Deaths---
+---To get a sense of the lethality of the virus across continents---
+
+SELECT
+continent, SUM(total_cases) as Total_Cases,SUM(CAST(total_deaths as bigint)) as Total_Deaths, (SUM(CAST(total_deaths as bigint))/SUM(total_cases))*100 as Lethality
+FROM
+dbo.covid_data_deaths$
+WHERE
+continent IS NOT NULL
+and location not in ('World', 'European Union', 'International')
+GROUP BY 
+continent
+ORDER BY
+continent
+
+
+---Total Cases vs Population--
+---To estimate the incidence of COVID-19 in different locations--
+
+SELECT 
+location, date, population,total_cases,(total_cases/population)*100 as Incidence
+FROM
+dbo.covid_data_deaths$
+WHERE
+continent IS NOT NULL
+and location not in ('World', 'European Union', 'International')
+ORDER BY
+location,date
+
+
+---Estimate of Countries with the Highest Total cases and Incidence of COVID-19---
+
+SELECT 
+location, date,population,MAX(total_cases) as Total_Cases, MAX((total_cases/population)*100) as Incidence
+FROM
+dbo.covid_data_deaths$
+WHERE
+continent IS NOT NULL
+and location not in ('World', 'European Union', 'International')
+GROUP BY 
+location,population
+ORDER BY
+Incidence DESC
+
+
+---Countries with Highest ToTal Deaths and Mortality Rate
+
+SELECT 
+location,population,CAST(total_deaths as bigint), MAX(CAST(total_deaths as bigint)) as TotalDeathCount, (CAST(total_deaths as bigint)/population)*100 as MortalityRate 
+FROM 
+dbo.covid_data_deaths$
+WHERE 
+continent IS NOT NULL 
+and location not in ('World', 'European Union', 'International')
+GROUP BY 
+location,population,total_deaths
+ORDER BY 
+TotalDeathCount DESC
+
+
+---Showing Contintents with the highest death count and Mortality Rate---
+
+SELECT 
+continent, MAX(cast(total_deaths as int)) as TotalDeathCount,(CAST(total_deaths as bigint)/population)*100 as MortalityRate 
+FROM
+dbo.covid_data_deaths$
+WHERE 
+continent IS NOT NULL 
+and location not in ('World', 'European Union', 'International')
+GROUP BY 
+continent
+ORDER BY 
+TotalDeathCount DESC
+
+
+---Showing Global Overview---
+
+SELECT 
+SUM(new_cases) as total_cases, SUM(cast(new_deaths as int)) as total_deaths, SUM(cast(new_deaths as int))/SUM(New_Cases)*100 as DeathPercentage
+FROM 
+dbo.covid_data_deaths$
+WHERE
+continent IS NOT NULL
+and location not in ('World', 'European Union', 'International')
+GROUP BY
+date
+ORDER BY
+1,2
+
+
+---Seeking probable Correlation between handwashing (Handwashing_facilities) and number of COVID-19 cases---
+
+Select 
+dea.continent, dea.location, dea.population,SUM(vac.handwashing_facilities) as Handwashing_facilities, SUM(dea.total_cases) as Total_cases
+FROM
+dbo.covid_data_vaccination$ vac 
+JOIN
+dbo.covid_data_deaths$ dea 
+ON
+dea.location = vac.location
+	and dea.date = vac.date
+WHERE
+dea.continent IS NOT NULL
+and dea.location not in ('World', 'European Union', 'International') 
+GROUP BY
+dea.continent, dea.location, dea.population
+ORDER BY
+location
+
+
+--- Total Population vs Vaccinations---
+--- Shows Percentage of Population that has recieved at least one Covid Vaccine ---
+SELECT 
+dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CONVERT(int,vac.new_vaccinations)) 
+OVER 
+(Partition by dea.Location Order by dea.location,dea.date) as People_Vaccinated
+FROM 
+dbo.covid_data_deaths$ dea
+JOIN 
+dbo.covid_data_vaccination$ vac
+ON 
+dea.location = vac.location
+and dea.date = vac.date
+WHERE
+dea.continent is not null
+and dea.location not in ('World', 'European Union', 'International')
+ORDER BY
+location
+
+
+---Seeking probable correlation between Full Vaccination and impact on the number of COVID-19 cases and deaths---
+
+SELECT
+dea.continent, dea.location, dea.population,(vac.people_fully_vaccinated/vac.population)*100 as Perc_People_fully_Vac, 
+SUM(dea.total_cases) as Total_cases,SUM(dea.total_deaths) as Total_deaths
+FROM
+dbo.covid_data_vaccination$ vac 
+JOIN
+dbo.covid_data_deaths$ dea 
+ON
+dea.location = vac.location
+	and dea.date = vac.date
+WHERE
+dea.continent IS NOT NULL 
+and vac.date between "2021-02-28" and "2022-06-02"
+and dea.location not in ('World', 'European Union', 'International')
+GROUP BY
+dea.continent, dea.location, dea.population
+ORDER BY
+location
+
+
+---Calculating COVID-19 Vaccination Dropout (the percent vaccinated who does not receive the final vaccine) likely Correlation between the number of COVID-19 cases--
+
+SELECT 
+dea.continent, SUM(dea.population) as Population,((SUM(vac.people_vaccinated)-SUM(vac.people_fully_vaccinated))/SUM(vac.people_vaccinated))*100 as Dropout_Vaccination,
+ SUM(dea.total_cases) as Total_Cases
+FROM
+dbo.covid_data_vaccination$ vac 
+JOIN
+dbo.covid_data_deaths$ dea 
+ON
+dea.continent = vac.continent
+	and dea.population = vac.population
+WHERE
+dea.continent IS NOT NULL 
+and vac.date between "2021-02-28" and "2022-06-02"
+and dea.location not in ('World', 'European Union', 'International')
+GROUP BY
+dea.continent, dea.location, dea.population
+
+
+--- Using CTE to perform Calculation on Partition By and the Vaccine Coverage in previous query---
+
+WITH PopvsVac (Continent, Location, Date, Population, New_Vaccinations, People_Vaccinated)
+as
+(
+SELECT 
+dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations,
+SUM(CONVERT(int,vac.new_vaccinations)) 
+OVER 
+(Partition by dea.Location Order by dea.location, dea.Date) as People_Vaccinated
+FROM 
+dbo.covid_data_deaths$ dea 
+JOIN 
+dbo.covid_data_vaccination$ vac
+ON 
+dea.location = vac.location
+	and dea.date = vac.date
+WHERE
+dea.continent IS NOT NULL 
+and dea.location not in ('World', 'European Union', 'International')
+)
+SELECT
+*, (People_Vaccinated/Population)*100 AS Vaccine_Coverage
+FROM PopvsVac
+
+
+--- Using Temp Table to perform Calculation on Partition By in previous query---
+
+DROP Table if exists 
+#PercentPopulationVaccinated
+Create Table 
+#PercentPopulationVaccinated
+(
+Continent nvarchar(255),
+Location nvarchar(255),
+Date datetime,
+Population numeric,
+New_vaccinations numeric,
+RollingPeopleVaccinated numeric
+)
+
+
+INSERT INTO 
+#PercentPopulationVaccinated
+SELECT 
+dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CONVERT(int,vac.new_vaccinations)) 
+OVER 
+(Partition by dea.Location Order by dea.location, dea.Date) as People_Vaccinated
+FROM 
+dbo.covid_data_deaths$ dea 
+JOIN 
+dbo.covid_data_vaccination$ vac
+ON 
+dea.location = vac.location
+	and dea.date = vac.date
+WHERE
+dea.continent IS NOT NULL 
+and dea.location not in ('World', 'European Union', 'International')
+
+SELECT
+*, (People_Vaccinated/Population)*100 AS Vaccine_Coverage
+FROM
+ #PercentPopulationVaccinated
+
+
+ --- Creating View to store data for later visualizations---
+
+ CREATE VIEW 
+ PercentPopulationVaccinated as
+ SELECT 
+dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CONVERT(int,vac.new_vaccinations)) 
+OVER 
+(Partition by dea.Location Order by dea.location, dea.Date) as People_Vaccinated
+FROM 
+dbo.covid_data_deaths$ dea 
+JOIN 
+dbo.covid_data_vaccination$ vac
+ON 
+dea.location = vac.location
+	and dea.date = vac.date
+WHERE
+dea.continent IS NOT NULL 
+dea.and location not in ('World', 'European Union', 'International')
+
+
