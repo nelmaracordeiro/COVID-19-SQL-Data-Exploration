@@ -1,4 +1,4 @@
----COVID-19 Data Exploration---
+---COVID-19 SQL Data Exploration---
 
 SELECT
 *
